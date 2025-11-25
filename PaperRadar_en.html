@@ -237,7 +237,6 @@
             uniqueArticles.forEach((article, index) => {
                 const authors = article.authorList ? article.authorList.author.map(a => a.lastName).join(', ') : 'N/A';
                 const journal = article.journalInfo?.journal?.title || 'Unknown Source'; // Changed "Unknown Journal" to "Unknown Source"
-                const pubDate = article.journalInfo?.printPublicationDate || article.pubYear || 'N/A';
                 const title = article.title;
                 const doi = article.doi;
                 const link = doi ? 'https://doi.org/' + doi : article.fullTextUrlList?.fullTextUrl?.[0]?.url || 'https://europepmc.org/article/MED/' + article.pmid;
@@ -252,10 +251,11 @@
                 titleLink.className = 'text-lg font-medium text-indigo-600 hover:text-indigo-800 break-words';
                 titleLink.textContent = title;
                 
-                // Metadata
+                // Metadata (Only Source and Authors - Date removed)
                 const metaP = document.createElement('p');
                 metaP.className = 'text-sm text-gray-500 mt-1';
-                metaP.innerHTML = '<strong>Source:</strong> ' + journal + ' | <strong>Authors:</strong> ' + authors + ' | <strong>Published:</strong> ' + pubDate; // Changed "Journal" to "Source"
+                // --- 日期已移除 ---
+                metaP.innerHTML = '<strong>Source:</strong> ' + journal + ' | <strong>Authors:</strong> ' + authors; 
                 
                 articleDiv.appendChild(titleLink);
                 articleDiv.appendChild(metaP);
@@ -315,12 +315,11 @@
             
             // Ensure articles are unique by PMID
             const uniqueArticles = Array.from(new Set(articles.map(a => a.pmid)))
-                                        .map(pmid => articles.find(a => a.pmid === pmid));
+                                        .map(pmid => articles.find(a => pmid === pmid));
 
             uniqueArticles.forEach((article, index) => {
                 const authors = article.authorList ? article.authorList.author.map(a => a.lastName).join(', ') : 'N/A';
-                const journal = article.journalInfo?.journal?.title || 'Unknown Source'; // Changed "Unknown Journal" to "Unknown Source"
-                const pubDate = article.journalInfo?.printPublicationDate || article.pubYear || 'N/A';
+                const journal = article.journalInfo?.journal?.title || 'Unknown Source'; 
                 const title = article.title;
                 const doi = article.doi;
                 const link = doi ? 'https://doi.org/' + doi : article.fullTextUrlList?.fullTextUrl?.[0]?.url || 'https://europepmc.org/article/MED/' + article.pmid;
@@ -329,10 +328,10 @@
                     type: "section",
                     text: {
                         type: "mrkdwn",
-                        // Use string concatenation for compatibility
+                        // --- 日期已移除 ---
                         text: '*<' + link + '|' + title + '>*' + '\n' +
                               ':memo: ' + authors + '\n' +
-                              ':mag: _' + journal + '_, ' + pubDate
+                              ':mag: _' + journal + '_' 
                     },
                     accessory: {
                         type: "button",
