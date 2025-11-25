@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research Article Auto-Pusher Bot (Slack)</title>
+    <!-- Load Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Force Inter font */
+        :root {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 sm:p-8">
+
+    <div class="max-w-4xl mx-auto bg-white shadow-xl rounded-2xl p-6 md:p-10">
+        <h1 class="text-3xl font-bold text-gray-800 mb-2">
+            🧬 Research Article Auto-Pusher Bot
+        </h1>
+        <p class="text-gray-600 mb-8">
+            Configure your keywords and Slack Webhook URL to search for and push recent relevant articles with one click.
+        </p>
+
+        <!-- Configuration Area -->
+        <div class="space-y-6">
+            <!-- Keyword Input -->
+            <div>
+                <label for="keywords" class="block text-sm font-medium text-gray-700 mb-1">
+                    Custom Keywords (Keywords)
+                </label>
+                <input type="text" id="keywords" value="CRISPR, Alzheimer, Genomics"
+                       placeholder="e.g.: gene editing, cancer, evolution"
+                       class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition duration-150">
+                <p class="mt-1 text-xs text-gray-500">
+                    Separate multiple keywords with commas. We use the most flexible search logic.
+                </p>
+            </div>
+            
+            <!-- Custom Journal List Input -->
+            <div>
+                <label for="customJournals" class="block text-sm font-medium text-gray-700 mb-1">
+                    Custom Journal List (Journals)
+                </label>
+                <input type="text" id="customJournals" 
+                       value="Nature, Science, Cell, Nature Genetics, Cell Genomics, AJHG"
+                       placeholder="e.g.: New England Journal of Medicine, The Lancet, PNAS"
+                       class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition duration-150">
+                <p class="mt-1 text-xs text-gray-500">
+                    Separate multiple journal names with commas. Note: use Europe PMC / PubMed recognized names (e.g., AJHG for American Journal of Human Genetics).
+                </p>
+            </div>
+
+            <!-- Search Parameters Configuration -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Timeframe Selection -->
+                <div>
+                    <label for="timeframe" class="block text-sm font-medium text-gray-700 mb-1">
+                        Search Timeframe (Timeframe)
+                    </label>
+                    <select id="timeframe"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition duration-150">
+                        <option value="7">Last 7 Days (Default)</option>
+                        <option value="30">Last 30 Days</option>
+                        <option value="365">Last 1 Year</option>
+                        <option value="0">All Time (For testing)</option>
+                    </select>
+                    <p class="mt-1 text-xs text-gray-500">
+                        Select the publication timeframe for the articles. Now using FIRST_PDATE explicit date range filtering.
+                    </p>
+                </div>
+
+                <!-- Page Size -->
+                <div>
+                    <label for="pageSize" class="block text-sm font-medium text-gray-700 mb-1">
+                        Max Results Per Page (Max Results)
+                    </label>
+                    <input type="number" id="pageSize" value="50" min="1" max="1000"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition duration-150">
+                    <p class="mt-1 text-xs text-gray-500">
+                        Maximum number of articles returned per API call (Europe PMC limit is 1000).
+                    </p>
+                </div>
+            </div>
+
+            <!-- Slack Webhook URL Input -->
+            <div>
+                <label for="slackWebhookUrl" class="block text-sm font-medium text-gray-700 mb-1">
+                    Slack Webhook URL
+                </label>
+                <input type="url" id="slackWebhookUrl"
+                       placeholder="Paste your Slack Incoming Webhook URL"
+                       class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition duration-150">
+                <p class="mt-1 text-xs text-red-500">
+                    Note: You must set up an Incoming Webhook in Slack to get this URL.
+                </p>
+            </div>
+        </div>
+
+        <!-- Run Button -->
+        <button id="runButton" onclick="runBot()"
+                class="w-full mt-8 flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-xl shadow-lg text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
+            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" id="loadingIcon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span id="buttonText">🤖 Run Auto-Pusher</span>
+        </button>
+
+        <!-- Result/Message Area -->
+        <div id="statusMessage" class="mt-6 p-4 rounded-lg text-center hidden"></div>
+        
+        <!-- Article List Display Area -->
+        <div id="articleResultsContainer" class="mt-8 hidden">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">🔎 Found Articles List</h2>
+            <div id="articleResults" class="space-y-4">
+                <!-- Articles will render here -->
+            </div>
+        </div>
+
+        <!-- Search Log -->
+        <div class="mt-8">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Search Details and Log</h2>
+            <pre id="logArea" class="bg-gray-800 text-green-400 p-4 rounded-lg overflow-x-auto text-sm h-64 border border-gray-700"></pre>
+        </div>
+    </div>
+
+    <script>
+        // Europe PMC API Endpoint
+        const EUROPE_PMC_API = 'https://www.ebi.ac.uk/europepmc/webservices/rest/search';
+        
+        const statusMessage = document.getElementById('statusMessage');
+        const logArea = document.getElementById('logArea');
+        const runButton = document.getElementById('runButton');
+        const loadingIcon = document.getElementById('loadingIcon');
+        const buttonText = document.getElementById('buttonText');
+        const articleResults = document.getElementById('articleResults');
+        const articleResultsContainer = document.getElementById('articleResultsContainer');
+        // Reference to the custom journals input field
+        const customJournalsInput = document.getElementById('customJournals');
+
+        /**
+         * Helper function: Gets the date N days ago and formats it as YYYY-MM-DD
+         * @param {number} daysAgo - How many days ago (0 means today)
+         * @returns {string} Formatted date string
+         */
+        function getDateNDaysAgo(daysAgo) {
+            const date = new Date();
+            date.setDate(date.getDate() - daysAgo);
+
+            const year = date.getFullYear();
+            // Month is 0-indexed, so we add 1
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+
+            // Use string concatenation for compatibility
+            return year + '-' + month + '-' + day;
+        }
+        
+        /**
+         * Logging function
+         * @param {string} message The message to log
+         * @param {string} type Message type ('info', 'error', 'success', 'warn')
+         */
+        function log(message, type = 'info') {
+            const now = new Date().toLocaleTimeString();
+            let color = 'text-green-400';
+            if (type === 'error') color = 'text-red-400';
+            if (type === 'warn') color = 'text-yellow-400';
+            
+            const logEntry = document.createElement('div');
+            logEntry.className = color;
+            // Use string concatenation for compatibility
+            logEntry.textContent = '[' + now + '] [' + type.toUpperCase() + '] ' + message;
+            
+            // Ensure only the last 50 logs are kept to prevent memory overflow
+            while (logArea.children.length > 50) {
+                logArea.removeChild(logArea.lastChild);
+            }
+            logArea.prepend(logEntry); // Newest log entry at the top
+        }
+
+        /**
+         * Displays a status message to the user
+         * @param {string} message Message content
+         * @param {string} color Tailwind CSS color class
+         */
+        function showStatus(message, color) {
+            statusMessage.textContent = message;
+            // Use string concatenation for compatibility
+            statusMessage.className = 'mt-6 p-4 rounded-lg text-center ' + color;
+            statusMessage.style.display = 'block';
+        }
+
+        /**
+         * Starts the loading state
+         */
+        function startLoading() {
+            runButton.disabled = true;
+            loadingIcon.classList.remove('hidden');
+            buttonText.textContent = 'Running...';
+            logArea.innerHTML = '';
+            articleResults.innerHTML = ''; // Clear results
+            articleResultsContainer.classList.add('hidden'); // Hide results container
+            statusMessage.style.display = 'none';
+        }
+
+        /**
+         * Stops the loading state
+         */
+        function stopLoading() {
+            runButton.disabled = false;
+            loadingIcon.classList.add('hidden');
+            buttonText.textContent = '🤖 Run Auto-Pusher';
+        }
+        
+        /**
+         * Displays the list of found articles in the UI
+         * @param {Array<Object>} articles Array of found article objects
+         */
+        function displayArticleResults(articles) {
+            articleResults.innerHTML = '';
+            
+            if (articles.length === 0) {
+                articleResultsContainer.classList.add('hidden');
+                return;
+            }
+
+            articleResultsContainer.classList.remove('hidden');
+
+            // Ensure articles are unique by PMID
+            const uniqueArticles = Array.from(new Set(articles.map(a => a.pmid)))
+                                        .map(pmid => articles.find(a => a.pmid === pmid));
+
+            uniqueArticles.forEach((article, index) => {
+                const authors = article.authorList ? article.authorList.author.map(a => a.lastName).join(', ') : 'N/A';
+                const journal = article.journalInfo?.journal?.title || 'Unknown Journal';
+                const pubDate = article.journalInfo?.printPublicationDate || article.pubYear || 'N/A';
+                const title = article.title;
+                const doi = article.doi;
+                const link = doi ? 'https://doi.org/' + doi : article.fullTextUrlList?.fullTextUrl?.[0]?.url || 'https://europepmc.org/article/MED/' + article.pmid;
+                
+                const articleDiv = document.createElement('div');
+                articleDiv.className = 'p-4 border border-gray-200 rounded-lg bg-gray-50 hover:bg-gray-100 transition duration-150 shadow-sm';
+                
+                // Title and Link
+                const titleLink = document.createElement('a');
+                titleLink.href = link;
+                titleLink.target = '_blank';
+                titleLink.className = 'text-lg font-medium text-indigo-600 hover:text-indigo-800 break-words';
+                titleLink.textContent = title;
+                
+                // Metadata
+                const metaP = document.createElement('p');
+                metaP.className = 'text-sm text-gray-500 mt-1';
+                metaP.innerHTML = '<strong>Journal:</strong> ' + journal + ' | <strong>Authors:</strong> ' + authors + ' | <strong>Published:</strong> ' + pubDate;
+                
+                articleDiv.appendChild(titleLink);
+                articleDiv.appendChild(metaP);
+                
+                articleResults.appendChild(articleDiv);
+            });
+        }
+
+        /**
+         * Formats the list of articles into the Slack message payload structure
+         * @param {Array<Object>} articles Array of article objects
+         * @param {number} daysAgo Number of days for the search (used for display)
+         * @returns {Object} Slack Message Payload
+         */
+        function formatSlackMessage(articles, daysAgo) {
+            let timeDesc;
+            if (daysAgo === 0) {
+                timeDesc = "All Time";
+            } else if (daysAgo === 7) {
+                timeDesc = "Last 7 Days";
+            } else if (daysAgo === 30) {
+                timeDesc = "Last 30 Days";
+            } else if (daysAgo === 365) {
+                timeDesc = "Last 1 Year";
+            } else {
+                timeDesc = "Selected Timeframe";
+            }
+
+            if (articles.length === 0) {
+                return {
+                    // Use string concatenation for compatibility
+                    text: '🤖 *Research Article Push Report*: No articles matching the keywords were found for the ' + timeDesc + ' timeframe.',
+                    blocks: [{
+                        type: "section",
+                        text: {
+                            type: "mrkdwn",
+                            text: ':wave: *Research Article Push Report*: No articles matching the keywords were found for the ' + timeDesc + ' timeframe.'
+                        }
+                    }]
+                };
+            }
+
+            const header = {
+                type: "header",
+                text: {
+                    type: "plain_text",
+                    // Use string concatenation for compatibility
+                    text: '🧬 ' + timeDesc + ' Research News (' + articles.length + ' articles)'
+                }
+            };
+
+            const divider = {
+                type: "divider"
+            };
+
+            const blocks = [header, divider];
+            
+            // Ensure articles are unique by PMID
+            const uniqueArticles = Array.from(new Set(articles.map(a => a.pmid)))
+                                        .map(pmid => articles.find(a => a.pmid === pmid));
+
+            uniqueArticles.forEach((article, index) => {
+                const authors = article.authorList ? article.authorList.author.map(a => a.lastName).join(', ') : 'N/A';
+                const journal = article.journalInfo?.journal?.title || 'Unknown Journal';
+                const pubDate = article.journalInfo?.printPublicationDate || article.pubYear || 'N/A';
+                const title = article.title;
+                const doi = article.doi;
+                const link = doi ? 'https://doi.org/' + doi : article.fullTextUrlList?.fullTextUrl?.[0]?.url || 'https://europepmc.org/article/MED/' + article.pmid;
+
+                const block = {
+                    type: "section",
+                    text: {
+                        type: "mrkdwn",
+                        // Use string concatenation for compatibility
+                        text: '*<' + link + '|' + title + '>*' + '\n' +
+                              ':memo: ' + authors + '\n' +
+                              ':mag: _' + journal + '_, ' + pubDate
+                    },
+                    accessory: {
+                        type: "button",
+                        text: {
+                            type: "plain_text",
+                            text: "View Full Text",
+                            emoji: true
+                        },
+                        url: link,
+                        action_id: 'view_article_' + index
+                    }
+                };
+                blocks.push(block);
+            });
+
+            return { blocks: blocks };
+        }
+
+        /**
+         * Fetches articles from Europe PMC API
+         * @param {string[]} journals Array of journal names
+         * @param {string[]} keywords Array of keywords
+         * @param {number} daysAgo Number of days for the search (0 means All Time)
+         * @param {number} pageSize Max results per page
+         * @returns {Promise<Array<Object>>} Array of article objects
+         */
+        async function fetchArticles(journals, keywords, daysAgo, pageSize) {
+            if (keywords.length === 0 || journals.length === 0) return [];
+            
+            // Build journal query part
+            const journalQuery = journals.map(j => 'JOURNAL:"' + j + '"').join(' OR ');
+            
+            // Keyword query: use the most lenient match
+            const keywordQuery = keywords.join(' OR ');
+            
+            let timeQuery = '';
+            let dateRangeDesc = 'All Time';
+
+            if (daysAgo > 0) {
+                // Use the FIRST_PDATE field with YYYY-MM-DD TO YYYY-MM-DD format for robustness
+                const startDate = getDateNDaysAgo(daysAgo);
+                const endDate = getDateNDaysAgo(0); // Today
+                
+                timeQuery = ' AND (FIRST_PDATE:[' + startDate + ' TO ' + endDate + '])'; 
+                dateRangeDesc = 'from ' + startDate + ' to ' + endDate;
+            }
+
+            // Combined query: (Journals) AND (Keywords) [ AND (Timeframe) ]
+            // Use string concatenation for compatibility
+            const fullQuery = '(' + journalQuery + ') AND (' + keywordQuery + ')' + timeQuery;
+            
+            log('Europe PMC Search Query: ' + fullQuery, 'info');
+            log('Date Range: ' + dateRangeDesc, 'info');
+
+            // Use string concatenation for compatibility
+            const url = EUROPE_PMC_API + '?query=' + encodeURIComponent(fullQuery) + '&resultType=core&format=json&pageSize=' + pageSize;
+            
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error('API Request failed, status code: ' + response.status);
+                }
+                const data = await response.json();
+                
+                const articles = data.resultList?.result || [];
+                log('Successfully retrieved ' + articles.length + ' potential articles.', 'success');
+                return articles;
+            } catch (error) {
+                log('Europe PMC API call failed: ' + error.message, 'error');
+                showStatus('API Error: ' + error.message, 'bg-red-100 text-red-800');
+                return [];
+            }
+        }
+
+        /**
+         * Pushes the message payload to the Slack Webhook
+         * @param {Object} payload Slack message body
+         * @param {string} webhookUrl Slack Webhook URL
+         * @returns {Promise<boolean>} Success status
+         */
+        async function postToSlack(payload, webhookUrl) {
+            log('Attempting to send Slack message...', 'info');
+            try {
+                const response = await fetch(webhookUrl, {
+                    method: 'POST',
+                    // Set Content-Type to text/plain to avoid CORS preflight request
+                    headers: { 'Content-Type': 'text/plain' }, 
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    log('Slack message sent successfully!', 'success');
+                    return true;
+                } else {
+                    const errorText = await response.text();
+                    throw new Error('Slack Webhook returned error status: ' + response.status + '. Details: ' + errorText);
+                }
+            } catch (error) {
+                log('Slack push failed: ' + error.message, 'error');
+                return false;
+            }
+        }
+
+        /**
+         * Main bot running function
+         */
+        async function runBot() {
+            startLoading();
+            
+            const keywordsInput = document.getElementById('keywords').value.trim();
+            const journalsInput = customJournalsInput.value.trim(); // Read the custom journals input
+            const webhookUrl = document.getElementById('slackWebhookUrl').value.trim();
+            // timeframe value is days (7, 30, 365) or 0 (All Time)
+            const daysAgo = parseInt(document.getElementById('timeframe').value, 10); 
+            const pageSize = parseInt(document.getElementById('pageSize').value, 10);
+            
+            // 1. Validate inputs
+            if (!keywordsInput || !journalsInput) {
+                log('Error: Keywords and Journal List cannot be empty.', 'error');
+                showStatus('Operation failed: Please enter keywords and the journal list.', 'bg-red-100 text-red-800');
+                stopLoading();
+                return;
+            }
+
+            const keywords = keywordsInput.split(',').map(k => k.trim()).filter(k => k.length > 0);
+            const journals = journalsInput.split(',').map(j => j.trim()).filter(j => j.length > 0);
+            
+            if (keywords.length === 0 || journals.length === 0) {
+                log('Error: Keywords or Journal List is empty after parsing.', 'error');
+                showStatus('Operation failed: Please check if the keywords and journal list are valid.', 'bg-red-100 text-red-800');
+                stopLoading();
+                return;
+            }
+
+            // Check time tag description
+            let timeDescLog = 'All Time';
+            if (daysAgo > 0) {
+                const startDate = getDateNDaysAgo(daysAgo);
+                const endDate = getDateNDaysAgo(0);
+                timeDescLog = 'Explicit Range: ' + startDate + ' to ' + endDate;
+            }
+
+            log('Parsed Keywords: ' + keywords.join(', '), 'info');
+            log('Target Journals: ' + journals.join(', '), 'info'); // Use parsed journal list
+            log('Search Range: ' + timeDescLog, 'info');
+            log('Max Results Per Page: ' + pageSize, 'info');
+
+            // 2. Search for articles
+            const articles = await fetchArticles(journals, keywords, daysAgo, pageSize); // Pass journal list
+
+            // 3. Display article list
+            displayArticleResults(articles);
+
+            // 4. Format Slack message payload
+            const slackPayload = formatSlackMessage(articles, daysAgo);
+
+            // 5. Push to Slack (only if Webhook URL is valid)
+            let success = false;
+            if (webhookUrl && webhookUrl.startsWith('http')) {
+                success = await postToSlack(slackPayload, webhookUrl);
+            } else {
+                log('Warning: Slack Webhook URL is empty or invalid, skipping push step. Check the log for search results.', 'warn');
+                success = true; // Count as success even without pushing if search was fine
+            }
+
+
+            // 6. Display final status
+            if (success) {
+                if (articles.length > 0) {
+                    const pushStatus = webhookUrl && webhookUrl.startsWith('http') ? ' and sent to your Slack channel.' : ' (not pushed to Slack).';
+                    showStatus('Search successful! Found ' + articles.length + ' relevant articles' + pushStatus, 'bg-green-100 text-green-800');
+                } else {
+                    const pushStatus = webhookUrl && webhookUrl.startsWith('http') ? 'Sent empty report to Slack.' : ' (not pushed to Slack).';
+                    showStatus('Search successful: No relevant articles found.' + pushStatus, 'bg-yellow-100 text-yellow-800');
+                }
+            } else {
+                showStatus('Operation failed: Please check the Slack Webhook URL and the error messages in the log.', 'bg-red-100 text-red-800');
+            }
+            
+            stopLoading();
+        }
+
+        // Run initialization prompts on first load
+        window.onload = () => {
+             log('Bot is ready. Please configure keywords and Slack Webhook URL.', 'info');
+        }
+
+    </script>
+</body>
+</html>
