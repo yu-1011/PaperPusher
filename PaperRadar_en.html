@@ -31,7 +31,7 @@
                 <label for="keywords" class="block text-sm font-medium text-gray-700 mb-1">
                     Custom Keywords (Keywords)
                 </label>
-                <input type="text" id="keywords" value="Genomics"
+                <input type="text" id="keywords" value="schizophrenia, genetic"
                        placeholder="e.g.: gene editing, cancer, evolution"
                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition duration-150">
                 <p class="mt-1 text-xs text-gray-500">
@@ -63,7 +63,7 @@
                     <select id="timeframe"
                             class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm transition duration-150">
                         <option value="7">Last 7 Days (Default)</option>
-                        <option value="30">Last 30 Days</option>
+                        <option value="30" selected>Last 30 Days</option>
                         <option value="365">Last 1 Year</option>
                         <option value="0">All Time (For testing)</option>
                     </select>
@@ -108,6 +108,16 @@
             </svg>
             <span id="buttonText">🤖 Run Auto-Pusher</span>
         </button>
+        
+        <!-- Action Buttons Area (New Download Button) -->
+        <div id="actionButtons" class="mt-4 flex justify-center space-x-4 hidden">
+            <button id="downloadButton" onclick="downloadArticlesAsCSV()"
+                    class="flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-xl shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Download CSV
+            </button>
+        </div>
+
 
         <!-- Result/Message Area -->
         <div id="statusMessage" class="mt-6 p-4 rounded-lg text-center hidden"></div>
@@ -128,6 +138,9 @@
     </div>
 
     <script>
+        // Global state for download function access
+        window.lastUniqueArticles = [];
+
         // Europe PMC API Endpoint
         const EUROPE_PMC_API = 'https://www.ebi.ac.uk/europepmc/webservices/rest/search';
         
@@ -138,8 +151,10 @@
         const buttonText = document.getElementById('buttonText');
         const articleResults = document.getElementById('articleResults');
         const articleResultsContainer = document.getElementById('articleResultsContainer');
-        // Reference to the custom journals input field
         const customJournalsInput = document.getElementById('customJournals');
+        // New elements
+        const actionButtons = document.getElementById('actionButtons');
+
 
         /**
          * Helper function: Gets the date N days ago and formats it as YYYY-MM-DD
@@ -205,6 +220,7 @@
             articleResults.innerHTML = ''; // Clear results
             articleResultsContainer.classList.add('hidden'); // Hide results container
             statusMessage.style.display = 'none';
+            actionButtons.classList.add('hidden'); // Hide download button
         }
 
         /**
@@ -215,28 +231,40 @@
             loadingIcon.classList.add('hidden');
             buttonText.textContent = '🤖 Run Auto-Pusher';
         }
+
+        /**
+         * Helper function to deduplicate articles by PMID and return the unique array.
+         * @param {Array<Object>} articles 
+         * @returns {Array<Object>} Unique articles
+         */
+        function getUniqueArticles(articles) {
+            const map = new Map();
+            articles.forEach(article => {
+                // Ensure pmid exists before attempting to map
+                if (article.pmid && !map.has(article.pmid)) {
+                    map.set(article.pmid, article);
+                }
+            });
+            return Array.from(map.values());
+        }
         
         /**
          * Displays the list of found articles in the UI
-         * @param {Array<Object>} articles Array of found article objects
+         * @param {Array<Object>} uniqueArticles Array of unique article objects
          */
-        function displayArticleResults(articles) {
+        function displayArticleResults(uniqueArticles) {
             articleResults.innerHTML = '';
             
-            if (articles.length === 0) {
+            if (uniqueArticles.length === 0) {
                 articleResultsContainer.classList.add('hidden');
                 return;
             }
 
             articleResultsContainer.classList.remove('hidden');
 
-            // Ensure articles are unique by PMID
-            const uniqueArticles = Array.from(new Set(articles.map(a => a.pmid)))
-                                        .map(pmid => articles.find(a => a.pmid === pmid));
-
             uniqueArticles.forEach((article, index) => {
                 const authors = article.authorList ? article.authorList.author.map(a => a.lastName).join(', ') : 'N/A';
-                const journal = article.journalInfo?.journal?.title || 'Unknown Source'; // Changed "Unknown Journal" to "Unknown Source"
+                const journal = article.journalInfo?.journal?.title || 'Unknown Source'; 
                 const title = article.title;
                 const doi = article.doi;
                 const link = doi ? 'https://doi.org/' + doi : article.fullTextUrlList?.fullTextUrl?.[0]?.url || 'https://europepmc.org/article/MED/' + article.pmid;
@@ -254,7 +282,7 @@
                 // Metadata (Only Source and Authors - Date removed)
                 const metaP = document.createElement('p');
                 metaP.className = 'text-sm text-gray-500 mt-1';
-                // --- 日期已移除 ---
+                // Date removed
                 metaP.innerHTML = '<strong>Source:</strong> ' + journal + ' | <strong>Authors:</strong> ' + authors; 
                 
                 articleDiv.appendChild(titleLink);
@@ -265,12 +293,61 @@
         }
 
         /**
+         * Creates and triggers a download of the unique article list as a CSV file.
+         */
+        function downloadArticlesAsCSV() {
+            const articles = window.lastUniqueArticles;
+            if (articles.length === 0) {
+                log('No articles to download.', 'warn');
+                return;
+            }
+
+            const headers = ["Title", "Source", "Authors", "Link"];
+            // Start CSV string with headers
+            let csv = headers.join(',') + '\n';
+
+            articles.forEach(article => {
+                // Escape quotes within fields by doubling them
+                const escape = (text) => '"' + (text ? String(text).replace(/"/g, '""') : 'N/A') + '"';
+
+                const title = escape(article.title);
+                const journal = escape(article.journalInfo?.journal?.title || 'Unknown Source');
+                const authors = escape(article.authorList ? article.authorList.author.map(a => a.lastName).join(', ') : 'N/A');
+                
+                const doi = article.doi;
+                const link = doi ? 'https://doi.org/' + doi : article.fullTextUrlList?.fullTextUrl?.[0]?.url || 'https://europepmc.org/article/MED/' + article.pmid;
+                
+                csv += [title, journal, authors, link].join(',') + '\n';
+            });
+
+            // Create Blob and trigger download
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+
+            const timeStamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            const filename = 'research_articles_' + timeStamp + '.csv';
+
+            if (link.download !== undefined) { // Check for download attribute support
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", filename);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                log('Successfully generated and downloaded CSV file: ' + filename, 'success');
+            } else {
+                log('Error: Your browser does not support automatic downloads.', 'error');
+            }
+        }
+
+        /**
          * Formats the list of articles into the Slack message payload structure
-         * @param {Array<Object>} articles Array of article objects
+         * @param {Array<Object>} uniqueArticles Array of unique article objects
          * @param {number} daysAgo Number of days for the search (used for display)
          * @returns {Object} Slack Message Payload
          */
-        function formatSlackMessage(articles, daysAgo) {
+        function formatSlackMessage(uniqueArticles, daysAgo) {
             let timeDesc;
             if (daysAgo === 0) {
                 timeDesc = "All Time";
@@ -284,7 +361,7 @@
                 timeDesc = "Selected Timeframe";
             }
 
-            if (articles.length === 0) {
+            if (uniqueArticles.length === 0) {
                 return {
                     // Use string concatenation for compatibility
                     text: '🤖 *Research Article Push Report*: No articles matching the keywords were found for the ' + timeDesc + ' timeframe.',
@@ -303,7 +380,7 @@
                 text: {
                     type: "plain_text",
                     // Use string concatenation for compatibility
-                    text: '🧬 ' + timeDesc + ' Research News (' + articles.length + ' articles)'
+                    text: '🧬 ' + timeDesc + ' Research News (' + uniqueArticles.length + ' unique articles)'
                 }
             };
 
@@ -313,10 +390,6 @@
 
             const blocks = [header, divider];
             
-            // Ensure articles are unique by PMID
-            const uniqueArticles = Array.from(new Set(articles.map(a => a.pmid)))
-                                        .map(pmid => articles.find(a => pmid === pmid));
-
             uniqueArticles.forEach((article, index) => {
                 const authors = article.authorList ? article.authorList.author.map(a => a.lastName).join(', ') : 'N/A';
                 const journal = article.journalInfo?.journal?.title || 'Unknown Source'; 
@@ -328,7 +401,7 @@
                     type: "section",
                     text: {
                         type: "mrkdwn",
-                        // --- 日期已移除 ---
+                        // Date removed
                         text: '*<' + link + '|' + title + '>*' + '\n' +
                               ':memo: ' + authors + '\n' +
                               ':mag: _' + journal + '_' 
@@ -397,7 +470,8 @@
                 const data = await response.json();
                 
                 const articles = data.resultList?.result || [];
-                log('Successfully retrieved ' + articles.length + ' potential articles.', 'success');
+                // *** IMPORTANT: The log here reports the raw count returned by the API (20 in your case) ***
+                log('Successfully retrieved ' + articles.length + ' raw potential articles.', 'success');
                 return articles;
             } catch (error) {
                 log('Europe PMC API call failed: ' + error.message, 'error');
@@ -481,12 +555,20 @@
 
             // 2. Search for articles
             const articles = await fetchArticles(journals, keywords, daysAgo, pageSize); // Pass journal list
+            
+            // *** NEW: Calculate unique article list and count ***
+            const uniqueArticles = getUniqueArticles(articles);
+            const uniqueCount = uniqueArticles.length;
+            
+            // *** STORE RESULTS FOR DOWNLOAD ***
+            window.lastUniqueArticles = uniqueArticles;
+
 
             // 3. Display article list
-            displayArticleResults(articles);
+            displayArticleResults(uniqueArticles); // Pass the unique list
 
             // 4. Format Slack message payload
-            const slackPayload = formatSlackMessage(articles, daysAgo);
+            const slackPayload = formatSlackMessage(uniqueArticles, daysAgo); // Pass the unique list
 
             // 5. Push to Slack (only if Webhook URL is valid)
             let success = false;
@@ -498,17 +580,21 @@
             }
 
 
-            // 6. Display final status
+            // 6. Display final status and download button
             if (success) {
-                if (articles.length > 0) {
+                if (uniqueCount > 0) {
                     const pushStatus = webhookUrl && webhookUrl.startsWith('http') ? ' and sent to your Slack channel.' : ' (not pushed to Slack).';
-                    showStatus('Search successful! Found ' + articles.length + ' relevant articles' + pushStatus, 'bg-green-100 text-green-800');
+                    // Now reports the unique count 
+                    showStatus('Search successful! Found ' + uniqueCount + ' unique relevant articles' + pushStatus, 'bg-green-100 text-green-800');
+                    actionButtons.classList.remove('hidden');
                 } else {
                     const pushStatus = webhookUrl && webhookUrl.startsWith('http') ? 'Sent empty report to Slack.' : ' (not pushed to Slack).';
                     showStatus('Search successful: No relevant articles found.' + pushStatus, 'bg-yellow-100 text-yellow-800');
+                    actionButtons.classList.add('hidden');
                 }
             } else {
                 showStatus('Operation failed: Please check the Slack Webhook URL and the error messages in the log.', 'bg-red-100 text-red-800');
+                actionButtons.classList.add('hidden');
             }
             
             stopLoading();
